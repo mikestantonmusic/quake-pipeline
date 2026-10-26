@@ -1,0 +1,15 @@
+.env
+logs/
+data/*
+!data/.gitkeep
+
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# dbt
+dbt/**/target/
+dbt/**/dbt_packages/
+dbt/**/logs/

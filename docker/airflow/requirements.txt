@@ -1,0 +1,4 @@
+requests
+tenacity
+pydantic
+psycopg2-binary
