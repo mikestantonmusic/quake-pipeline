@@ -1,0 +1,5 @@
+# Local development: pipeline dependencies plus test and lint tools.
+-r docker/airflow/requirements.txt
+pytest
+responses
+ruff
