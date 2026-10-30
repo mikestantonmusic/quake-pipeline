@@ -63,6 +63,19 @@ data/raw/fdsn/YYYY/MM/DD/<window start>_<window end>.geojson
 
 The FDSN API returns at most 20,000 events per query, so `range` checks the count first and halves the window until each part fits.
 
+### Loading into Postgres
+
+With the Docker stack running:
+
+```sh
+python -m ingestion.load                         # load everything under data/raw
+python -m ingestion.load data/raw/fdsn/2026/10   # or specific files/folders
+```
+
+`raw.earthquake_events` stores one row per event **version**, keyed on `(event_id, updated_ms)`. USGS bumps `updated` whenever it revises an event (new magnitude, status `automatic` → `reviewed`), so revisions become new rows. Seeing the same version again, which happens constantly because the hourly `all_day` feed overlaps itself, inserts nothing. That makes loads idempotent: re-running a load never creates duplicates. Each load is recorded in `raw.load_audit`.
+
+Database tests run against a separate `warehouse_test` database and are skipped automatically when Postgres isn't reachable.
+
 ## Layout
 
 | Path | Purpose |
