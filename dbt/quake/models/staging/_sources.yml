@@ -1,0 +1,16 @@
+version: 2
+
+sources:
+  - name: usgs
+    schema: raw
+    description: Data loaded unchanged from the USGS APIs by ingestion/load.py.
+    tables:
+      - name: earthquake_events
+        description: One row per event version, keyed on (event_id, updated_ms).
+        config:
+          loaded_at_field: loaded_at
+          freshness:
+            warn_after: {count: 2, period: hour}
+            error_after: {count: 26, period: hour}
+      - name: load_audit
+        description: One row per file load, with counts.

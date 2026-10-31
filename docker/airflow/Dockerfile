@@ -8,5 +8,5 @@ RUN pip install --no-cache-dir \
 
 # dbt lives in its own virtualenv so its dependencies never clash with Airflow's.
 RUN python -m venv /home/airflow/dbt-venv \
-    && /home/airflow/dbt-venv/bin/pip install --no-cache-dir dbt-postgres==1.9.0
+    && /home/airflow/dbt-venv/bin/pip install --no-cache-dir dbt-core==1.12.6 dbt-postgres==1.9.0
 ENV PATH="${PATH}:/home/airflow/dbt-venv/bin"

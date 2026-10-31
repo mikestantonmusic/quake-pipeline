@@ -76,6 +76,29 @@ python -m ingestion.load data/raw/fdsn/2026/10   # or specific files/folders
 
 Database tests run against a separate `warehouse_test` database and are skipped automatically when Postgres isn't reachable.
 
+## Transforming with dbt
+
+dbt runs inside the Airflow container, which has it installed and can reach Postgres:
+
+```sh
+docker compose exec -w /opt/airflow/dbt/quake airflow-scheduler dbt deps    # first time only
+docker compose exec -w /opt/airflow/dbt/quake airflow-scheduler dbt build   # build and test everything
+```
+
+| Table | Grain | Purpose |
+|-------|-------|---------|
+| `staging.stg_earthquakes` | one row per event | Latest version of every event, flattened from JSON into typed columns |
+| `marts.fct_earthquakes` | one row per earthquake | Main analysis table; excludes blasts and deleted events; adds `mag_class`, `depth_class`, `region` |
+| `marts.dim_region` | one row per region | Lifetime stats per region |
+| `marts.agg_daily_by_region` | one row per region per day | Daily counts and magnitudes |
+
+Design decisions:
+
+- **Incremental staging, re-ranked per event.** Each run reprocesses every stored version of any event with new rows, not only the new rows, so an older version loaded late by a backfill can't overwrite a newer one.
+- **Deletions propagate.** A version with status `deleted` removes the event from the marts while staying visible in staging.
+- **Reconciliation tests.** Besides column tests, `tests/` asserts that `fct_earthquakes` matches the latest versions in raw, and that the daily aggregate adds up to the fact table.
+- **`region` comes from `place`.** It's the text after the last comma, or the whole string when there's no comma ("Banda Sea"). The `region_aliases` seed expands codes like `CA` and `MX`. It's a label parsed from USGS text, not a true geographic join.
+
 ## Layout
 
 | Path | Purpose |
