@@ -7,10 +7,14 @@ x-airflow-common: &airflow-common
     dockerfile: docker/airflow/Dockerfile
   image: quake-pipeline/airflow:local
   env_file: .env
-  environment: &airflow-env
+  environment:
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
     AIRFLOW__CORE__LOAD_EXAMPLES: "false"
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+    # Cosmos runs `dbt ls` the first time it parses a DAG after the dbt project changes,
+    # which can take ~30s (cached afterwards). Allow more than the 30s default.
+    AIRFLOW__CORE__DAGBAG_IMPORT_TIMEOUT: "120"
+    AIRFLOW__DAG_PROCESSOR__DAG_FILE_PROCESSOR_TIMEOUT: "180"
     AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-apiserver:8080/execution/
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/airflow
     # Local dev only: every UI user is an admin, no login required.
@@ -19,7 +23,9 @@ x-airflow-common: &airflow-common
     AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_JWT_SECRET}
     # Connection used by DAGs to reach the warehouse database.
     AIRFLOW_CONN_WAREHOUSE: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${WAREHOUSE_DB}
-    PYTHONPATH: /opt/airflow
+    # /opt/airflow for the ingestion package; dags so DAG files can import quake_common
+    # in every context (DAG processor, task runner and CLI).
+    PYTHONPATH: /opt/airflow:/opt/airflow/dags
     DATA_DIR: /opt/airflow/data
     DBT_PROJECT_DIR: /opt/airflow/dbt/quake
   volumes:
@@ -53,7 +59,8 @@ services:
 
   airflow-init:
     <<: *airflow-common
-    command: db migrate
+    # Set up Airflow's database, then the one-slot pool that keeps dbt runs from overlapping.
+    command: bash -c "airflow db migrate && airflow pools set dbt 1 'One dbt task at a time'"
     restart: "no"
 
   airflow-apiserver:

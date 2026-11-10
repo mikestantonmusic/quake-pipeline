@@ -99,6 +99,35 @@ Design decisions:
 - **Reconciliation tests.** Besides column tests, `tests/` asserts that `fct_earthquakes` matches the latest versions in raw, and that the daily aggregate adds up to the fact table.
 - **`region` comes from `place`.** It's the text after the last comma, or the whole string when there's no comma ("Banda Sea"). The `region_aliases` seed expands codes like `CA` and `MX`. It's a label parsed from USGS text, not a true geographic join.
 
+## Orchestrating with Airflow
+
+Two DAGs run the full pipeline. Both are paused when first created; unpause them in the Airflow UI (http://localhost:8080).
+
+| DAG | Schedule | What it does |
+|-----|----------|--------------|
+| `quake_incremental` | hourly | Downloads the `all_day` feed, loads new event versions, rebuilds the marts |
+| `quake_backfill` | manual | Downloads a date range from the FDSN API, loads it, rebuilds the marts |
+
+```
+extract → load → transform (dbt, one task per model via Cosmos)
+                   region_aliases.seed → test ─┐
+                   stg_earthquakes.run → test ─┴→ fct_earthquakes.run → test ─┬→ dim_region.run → test
+                                                                              └→ agg_daily_by_region.run → test
+```
+
+To backfill, trigger `quake_backfill` with a config such as `{"start": "2026-10-01", "end": "2026-10-08"}` (UTC dates, end exclusive):
+
+```sh
+docker compose exec airflow-scheduler airflow dags trigger quake_backfill --conf '{"start": "2026-10-01", "end": "2026-10-08"}'
+```
+
+Design decisions:
+
+- **Thin DAGs.** Tasks call the same `ingestion` functions as the CLI. Only file paths and small summaries pass between tasks (XCom), never the data itself.
+- **Per-model dbt tasks with [Cosmos](https://github.com/astronomer/astronomer-cosmos).** Each model and its tests are separate Airflow tasks, so a failure shows exactly which model broke and can be retried on its own. Tests use `BUILDABLE` selection, so a test that reads several models only runs once all of them are rebuilt.
+- **A one-slot `dbt` pool.** All dbt tasks share it, so an hourly run and a backfill never build the same incremental table at the same time.
+- **Safe retries.** Every task is idempotent: extract files are named after the run, and loads skip versions that are already stored.
+
 ## Layout
 
 | Path | Purpose |

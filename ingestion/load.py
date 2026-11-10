@@ -96,8 +96,8 @@ def to_rows(features: list[dict], source: str, source_file: str) -> list[tuple]:
 def load_file(conn: Connection, path: Path, data_dir: Path) -> LoadResult:
     """Load one raw file. Events and its audit row are written in a single transaction."""
     started_at = datetime.now(UTC)
-    payload = json.loads(Path(path).read_text(encoding="utf-8"))
-    validation = validate_features(payload.get("features", []))
+    collection = json.loads(Path(path).read_text(encoding="utf-8"))
+    validation = validate_features(collection.get("features", []))
     for event_id, error in validation.invalid:
         log.warning("Skipping invalid feature %s: %s", event_id, error)
 
