@@ -6,7 +6,7 @@ requires-python = ">=3.12"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["."]
+pythonpath = [".", "dashboard"]
 
 [tool.ruff]
 line-length = 100
@@ -14,3 +14,7 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]
+
+[tool.ruff.lint.isort]
+# Dashboard modules are imported by bare name (dashboard/ is on the path), not as a package.
+known-first-party = ["ingestion", "charts", "db", "metrics", "queries"]

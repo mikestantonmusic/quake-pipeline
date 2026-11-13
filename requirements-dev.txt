@@ -1,5 +1,6 @@
-# Local development: pipeline dependencies plus test and lint tools.
+# Local development: pipeline and dashboard dependencies plus test and lint tools.
 -r docker/airflow/requirements.txt
+-r dashboard/requirements.txt
 pytest
 responses
 ruff

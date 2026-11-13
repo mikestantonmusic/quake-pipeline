@@ -1,10 +1,8 @@
 import json
-import os
 from pathlib import Path
 
 import psycopg2
 import pytest
-from psycopg2 import sql
 
 from ingestion.load import (
     expand_paths,
@@ -14,11 +12,6 @@ from ingestion.load import (
     source_of,
     to_rows,
 )
-
-TEST_DSN = os.environ.get(
-    "TEST_WAREHOUSE_DSN", "postgresql://quake:quake@localhost:5432/warehouse_test"
-)
-
 
 # --- pure helpers ------------------------------------------------------------------------
 
@@ -60,24 +53,9 @@ def test_expand_paths_finds_files_in_folders_sorted(tmp_path):
 # --- database tests (skipped when Postgres isn't reachable) -------------------------------
 
 
-def _ensure_test_database(dsn: str) -> None:
-    params = psycopg2.extensions.parse_dsn(dsn)
-    admin = psycopg2.connect(**{**params, "dbname": "postgres"}, connect_timeout=3)
-    admin.autocommit = True  # CREATE DATABASE can't run inside a transaction
-    with admin.cursor() as cur:
-        cur.execute("select 1 from pg_database where datname = %s", (params["dbname"],))
-        if cur.fetchone() is None:
-            cur.execute(sql.SQL("create database {}").format(sql.Identifier(params["dbname"])))
-    admin.close()
-
-
 @pytest.fixture
-def conn():
-    try:
-        _ensure_test_database(TEST_DSN)
-        conn = psycopg2.connect(TEST_DSN, connect_timeout=3)
-    except psycopg2.OperationalError as exc:
-        pytest.skip(f"Postgres not available: {exc}")
+def conn(test_dsn):
+    conn = psycopg2.connect(test_dsn, connect_timeout=3)
     with conn, conn.cursor() as cur:
         cur.execute("drop schema if exists raw cascade")
     yield conn

@@ -7,6 +7,7 @@ overwritten and already-loaded versions are skipped.
 
 from datetime import date, datetime, time
 
+from airflow.exceptions import AirflowFailException
 from airflow.sdk import Param, dag, get_current_context, task
 from quake_common import DATA_DIR, DEFAULT_ARGS, dbt_task_group, load_files
 
@@ -36,7 +37,10 @@ def quake_backfill():
         start = datetime.combine(date.fromisoformat(params["start"]), time())
         end = datetime.combine(date.fromisoformat(params["end"]), time())
         if end <= start:
-            raise ValueError(f"end ({params['end']}) must be after start ({params['start']})")
+            # AirflowFailException fails the task straight away: retrying bad input can't help.
+            raise AirflowFailException(
+                f"end ({params['end']}) must be after start ({params['start']})"
+            )
         return [str(r.path) for r in extract_range(USGSClient(), DATA_DIR, start, end)]
 
     @task

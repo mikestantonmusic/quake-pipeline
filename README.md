@@ -128,6 +128,25 @@ Design decisions:
 - **A one-slot `dbt` pool.** All dbt tasks share it, so an hourly run and a backfill never build the same incremental table at the same time.
 - **Safe retries.** Every task is idempotent: extract files are named after the run, and loads skip versions that are already stored.
 
+## Dashboard
+
+http://localhost:8501 has two pages:
+
+- **Earthquakes**: date, magnitude and region filters above stat tiles, a world map (dot size = magnitude, color = depth band), earthquakes per day, the magnitude distribution, the busiest regions and the strongest events with links to USGS.
+- **Pipeline health**: data freshness against the same thresholds as the dbt freshness check, hourly load coverage, new versions per load, invalid-event counts and warehouse totals.
+
+The code is split so each layer can be tested on its own:
+
+| File | Role |
+|------|------|
+| `dashboard/queries.py` | All SQL, with bound parameters; no Streamlit, so it runs in tests |
+| `dashboard/metrics.py` | Pure pandas calculations (KPIs, daily counts, histogram, freshness) |
+| `dashboard/charts.py` | Altair charts and the pydeck map, using a validated light/dark palette |
+| `dashboard/db.py` | Connection plus 5-minute caching of every query |
+| `dashboard/views/` | The two pages, layout only |
+
+It reads only `marts.*`, plus `raw.load_audit` for health. `tests/test_dashboard.py` covers the calculations, runs the queries against `warehouse_test`, and renders both pages headlessly with Streamlit's `AppTest`.
+
 ## Layout
 
 | Path | Purpose |
