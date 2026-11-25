@@ -13,12 +13,12 @@ with watermark as (
 
 latest as (
 
-    select distinct on (event_id)
-        payload -> 'properties' ->> 'type' as event_type,
-        payload -> 'properties' ->> 'status' as status
-    from {{ source('usgs', 'earthquake_events') }}
-    where loaded_at <= (select loaded_at from watermark)
-    order by event_id, updated_ms desc
+    select distinct on (raw_events.event_id)
+        raw_events.payload -> 'properties' ->> 'type' as event_type,
+        raw_events.payload -> 'properties' ->> 'status' as status
+    from {{ source('usgs', 'earthquake_events') }} as raw_events
+    where raw_events.loaded_at <= (select watermark.loaded_at from watermark)
+    order by raw_events.event_id asc, raw_events.updated_ms desc
 
 ),
 
@@ -26,8 +26,9 @@ expected as (
 
     select count(*) as n
     from latest
-    where event_type = 'earthquake'
-      and coalesce(status, '') <> 'deleted'
+    where
+        event_type = 'earthquake'
+        and coalesce(status, '') <> 'deleted'
 
 ),
 
@@ -37,6 +38,8 @@ actual as (
 
 )
 
-select expected.n as expected, actual.n as actual
+select
+    expected.n as expected,
+    actual.n as actual
 from expected, actual
 where expected.n <> actual.n

@@ -1,0 +1,21 @@
+[sqlfluff]
+dialect = postgres
+# The jinja templater with dbt builtins (ref, source, config, is_incremental) lints the
+# models without connecting to a database, unlike the dbt templater.
+templater = jinja
+max_line_length = 100
+# ST06 reorders select lists (plain columns before calculations); the models list columns
+# in a deliberate reading order instead.
+exclude_rules = ST06
+
+[sqlfluff:templater:jinja]
+apply_dbt_builtins = True
+
+[sqlfluff:indentation]
+tab_space_size = 4
+
+[sqlfluff:rules:capitalisation.keywords]
+capitalisation_policy = lower
+
+[sqlfluff:rules:capitalisation.functions]
+extended_capitalisation_policy = lower

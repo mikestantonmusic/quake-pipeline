@@ -1,24 +1,41 @@
 # USGS Earthquake Pipeline
 
-An end-to-end batch data pipeline built on the [USGS earthquake feeds](https://earthquake.usgs.gov/earthquakes/feed/v1.0/geojson.php).
+[![CI](https://github.com/mikestantonmusic/quake-pipeline/actions/workflows/ci.yml/badge.svg)](https://github.com/mikestantonmusic/quake-pipeline/actions/workflows/ci.yml)
 
-**Stack:** Docker Compose · Python · Airflow 3 · Postgres 16 · dbt · Streamlit
+An ELT pipeline that batch-loads [USGS earthquake data](https://earthquake.usgs.gov/earthquakes/feed/v1.0/geojson.php) into Postgres every hour, transforms and tests it with dbt, orchestrates it with Airflow, and serves it in a Streamlit dashboard. Everything runs locally in Docker.
 
+**Stack:** Python · Airflow 3 · Cosmos · dbt · Postgres 16 · Streamlit · Docker Compose · GitHub Actions
+
+<!-- Screenshots: add docs/images/dashboard.png and docs/images/airflow-graph.png, then uncomment.
+![Earthquakes dashboard](docs/images/dashboard.png)
+![Airflow DAG with per-model dbt tasks](docs/images/airflow-graph.png)
+-->
+
+## Highlights
+
+- **Handles revisions correctly.** USGS revises events after publishing them (new magnitudes, `automatic` → `reviewed`, deletions). Raw storage keeps every version, keyed on `(event_id, updated_ms)`; dbt keeps the latest; deletions propagate to the marts.
+- **Idempotent end to end.** Re-running any extract, load, DAG run or backfill never duplicates data, so retries and overlapping hourly feeds are safe.
+- **Correct under concurrency.** Hourly runs and backfills can overlap: dbt tasks share a one-slot pool, and the incremental model uses a lookback window so a slow load's rows can't be skipped.
+- **Tested at every layer.** 63 pytest tests (API client, loader, dashboard queries and pages), 27 dbt data tests including reconciliation checks against raw, and CI that runs all of it against a real Postgres.
+- **One Airflow task per dbt model** via Cosmos, so a failure points at the exact model and can be retried on its own.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    usgs["USGS APIs<br/>summary feed (hourly)<br/>FDSN query (backfill)"]
+    files[("data/raw/<br/>GeoJSON files")]
+    subgraph pg [Postgres warehouse]
+        raw[("raw<br/>every event version, JSONB")]
+        stg[("staging<br/>latest version, typed")]
+        marts[("marts<br/>fact, dimension, daily aggregate")]
+    end
+    dash["Streamlit dashboard"]
+
+    usgs -- extract --> files -- load --> raw -- dbt --> stg -- dbt --> marts --> dash
 ```
-USGS feed / FDSN API
-   │  Airflow: extract
-   ▼
-data/raw/YYYY/MM/DD/*.geojson     raw files (immutable)
-   │  Airflow: load
-   ▼
-Postgres raw.*                    append-only JSONB
-   │  Airflow: dbt build
-   ▼
-staging.* → marts.*               deduplicated, typed, modeled
-   │
-   ▼
-Streamlit dashboard
-```
+
+Airflow runs `extract → load → dbt` every hour (`quake_incremental`) and on demand for date ranges (`quake_backfill`). The Python extract and load code has no Airflow imports, so it also runs and is tested on its own.
 
 ## Quick start
 
@@ -35,7 +52,11 @@ docker compose up -d --build  # or: make up
 | Streamlit | http://localhost:8501  |
 | Postgres  | localhost:5432 (credentials in `.env`) |
 
-In Airflow, unpause and trigger the `smoke_test` DAG. It should pass when the warehouse schemas exist and dbt is installed.
+Then, in Airflow:
+
+1. Trigger `smoke_test`. It passes when the warehouse schemas exist and dbt is installed.
+2. Load some history: trigger `quake_backfill` with a start and end date (see [Orchestrating with Airflow](#orchestrating-with-airflow)).
+3. Unpause `quake_incremental` to load new earthquakes every hour.
 
 ## Local development (no Docker needed)
 
@@ -45,9 +66,11 @@ The ingestion code is plain Python, so it can be run and tested directly:
 python -m venv .venv
 .venv\Scripts\activate            # macOS/Linux: source .venv/bin/activate
 pip install -r requirements-dev.txt
+pre-commit install                # run the linters before every commit
 
-pytest                            # unit tests (offline; HTTP is mocked)
-ruff check .                      # lint
+pytest                            # tests; database tests skip unless Postgres is running
+ruff check .                      # lint Python
+sqlfluff lint dbt/quake/models dbt/quake/tests   # lint dbt SQL
 
 # Download data into data/raw/
 python -m ingestion.extract feed --level all --period day
@@ -147,6 +170,34 @@ The code is split so each layer can be tested on its own:
 
 It reads only `marts.*`, plus `raw.load_audit` for health. `tests/test_dashboard.py` covers the calculations, runs the queries against `warehouse_test`, and renders both pages headlessly with Streamlit's `AppTest`.
 
+## Testing and CI
+
+Every push and pull request runs three GitHub Actions jobs (`.github/workflows/ci.yml`):
+
+| Job | What it checks |
+|-----|----------------|
+| Lint | `ruff` on Python, `sqlfluff` on the dbt SQL |
+| Python tests | The full pytest suite against a Postgres service container. `REQUIRE_TEST_DB=1` makes database tests fail rather than skip if Postgres is unreachable, so a green run means they really ran. |
+| dbt | Loads the fixture events with the real loader, then runs `dbt build` twice: once from empty, once through the incremental path |
+
+The same linters run locally before each commit through `pre-commit` (`.pre-commit-config.yaml`), pinned to the versions in `requirements-dev.txt`.
+
+## Running it day to day
+
+- **Shutting down:** `docker compose down` in the evening and `docker compose up -d` in the morning. There's no need to pause DAGs: each hourly run reloads the past 24 hours, so a gap shorter than a day fills itself.
+- **Longer gaps** (a weekend away): trigger `quake_backfill` for the missing days. Overlapping days already loaded are skipped.
+- **If the computer sleeps mid-run:** Airflow detects the frozen task on wake and retries it automatically. A run still stuck 15 minutes after waking can be marked failed in the UI; the next hourly run catches up.
+- **Monitoring:** the dashboard's *Pipeline health* page shows freshness and recent loads; task-level results and logs are in the Airflow UI.
+
+## Future work
+
+- **Failure alerts:** notify by email, Slack or Discord when a task fails after its retries.
+- **Freshness as a pipeline step:** run `dbt source freshness` in the DAG so stale data fails a run.
+- **Faster dbt tasks:** each Cosmos task reinstalls dbt packages (~5 s of its ~14 s); installing them once in the image would save roughly a minute per hourly run.
+- **Geographic regions:** replace the `place`-text parsing with a PostGIS join against country and ocean boundaries.
+- **Retention:** clean up old raw files and Airflow logs.
+- **Cloud version:** port the warehouse to BigQuery (loader and SQL dialect change; the design stays the same).
+
 ## Layout
 
 | Path | Purpose |
@@ -155,5 +206,7 @@ It reads only `marts.*`, plus `raw.load_audit` for health. `tests/test_dashboard
 | `dags/` | Airflow DAGs |
 | `dbt/` | dbt project (staging and marts) |
 | `dashboard/` | Streamlit app |
+| `tests/` | pytest suite and fixture data |
 | `docker/` | Airflow image and Postgres init scripts |
+| `.github/workflows/` | CI |
 | `data/` | Raw GeoJSON landing zone (git-ignored) |

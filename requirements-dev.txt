@@ -1,6 +1,13 @@
-# Local development: pipeline and dashboard dependencies plus test and lint tools.
--r docker/airflow/requirements.txt
+# Local development and CI: what the ingestion code and dashboard need, plus test and lint
+# tools. Airflow and Cosmos are deliberately absent: DAGs run only in the Docker image
+# (docker/airflow/), and installing them here would pull an unconstrained Airflow.
+requests
+tenacity
+pydantic
+psycopg2-binary==2.9.13
 -r dashboard/requirements.txt
-pytest
+pytest==9.2.0
 responses
-ruff
+ruff==0.17.3
+sqlfluff==4.5.0
+pre-commit==4.7.0

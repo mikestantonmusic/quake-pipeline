@@ -1,11 +1,13 @@
--- One row per real earthquake: non-earthquakes (blasts, ice quakes) and deleted events are excluded.
+-- One row per real earthquake. Non-earthquakes (blasts, ice quakes) and deleted events
+-- are excluded.
 
 with events as (
 
     select *
     from {{ ref('stg_earthquakes') }}
-    where event_type = 'earthquake'
-      and not is_deleted
+    where
+        event_type = 'earthquake'
+        and not is_deleted
 
 ),
 

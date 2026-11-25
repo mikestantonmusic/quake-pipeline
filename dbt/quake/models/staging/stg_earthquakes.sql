@@ -8,20 +8,21 @@ with versions as (
     from {{ source('usgs', 'earthquake_events') }}
 
     {% if is_incremental() %}
-    -- Re-rank every stored version of any event with new rows, not just the new rows,
-    -- so an older version loaded late (e.g. by a backfill) can't replace a newer one.
-    --
-    -- The lookback re-checks rows from the last few hours on every run. loaded_at is when
-    -- a load *started*, so when loads overlap, a slow load's rows can become visible after
-    -- a faster one has already advanced the high-water mark past them. Re-ranking is
-    -- idempotent, so reprocessing the overlap is harmless.
-    where event_id in (
-        select event_id
-        from {{ source('usgs', 'earthquake_events') }}
-        where loaded_at > (
-            select coalesce(max(loaded_at), '-infinity') - interval '3 hours' from {{ this }}
+        -- Re-rank every stored version of any event with new rows, not just the new rows,
+        -- so an older version loaded late (e.g. by a backfill) can't replace a newer one.
+        --
+        -- The lookback re-checks rows from the last few hours on every run. loaded_at is
+        -- when a load *started*, so when loads overlap, a slow load's rows can become
+        -- visible after a faster one has already advanced the high-water mark past them.
+        -- Re-ranking is idempotent, so reprocessing the overlap is harmless.
+        where event_id in (
+            select new_rows.event_id
+            from {{ source('usgs', 'earthquake_events') }} as new_rows
+            where new_rows.loaded_at > (
+                select coalesce(max(current_stg.loaded_at), '-infinity') - interval '3 hours'
+                from {{ this }} as current_stg
+            )
         )
-    )
     {% endif %}
 
 ),

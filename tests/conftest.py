@@ -18,11 +18,17 @@ TEST_DSN = os.environ.get(
 
 @pytest.fixture(scope="session")
 def test_dsn() -> str:
-    """DSN of the warehouse_test database, created if missing. Skips if Postgres is down."""
+    """DSN of the warehouse_test database, created if missing.
+
+    Skips database tests if Postgres is down, which is convenient locally. CI sets
+    REQUIRE_TEST_DB=1 so a missing database fails the run instead of skipping silently.
+    """
     try:
         params = psycopg2.extensions.parse_dsn(TEST_DSN)
         admin = psycopg2.connect(**{**params, "dbname": "postgres"}, connect_timeout=3)
     except psycopg2.OperationalError as exc:
+        if os.environ.get("REQUIRE_TEST_DB") == "1":
+            pytest.fail(f"Postgres required (REQUIRE_TEST_DB=1) but not available: {exc}")
         pytest.skip(f"Postgres not available: {exc}")
     admin.autocommit = True  # CREATE DATABASE can't run inside a transaction
     with admin.cursor() as cur:
