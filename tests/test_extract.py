@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 import responses
 
 from ingestion.extract import extract_feed, extract_range, main
+from ingestion.storage import LocalStore
 from ingestion.usgs_client import FDSN_URL
 
 FEED_ALL_DAY = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson"
@@ -68,4 +69,44 @@ def test_cli_feed_command(feed_sample, tmp_path):
 
     main(["--data-dir", str(tmp_path), "feed"])
 
+    assert len(list((tmp_path / "raw/feed/all_day").rglob("*.geojson"))) == 1
+
+
+@responses.activate
+def test_extract_writes_same_file_locally_and_to_s3(client, feed_sample, tmp_path, s3, s3_store):
+    responses.get(FEED_ALL_DAY, json=feed_sample)
+
+    result = extract_feed(client, [LocalStore(tmp_path), s3_store], RUN_TS)
+
+    key = "raw/feed/all_day/2026/10/28/20261028T140000Z.geojson"
+    assert result.key == key
+    assert result.locations == (str(tmp_path / key), f"s3://{s3_store.bucket}/{key}")
+    assert result.path == tmp_path / key
+    uploaded = s3.get_object(Bucket=s3_store.bucket, Key=key)["Body"].read()
+    assert uploaded == (tmp_path / key).read_bytes()
+    assert json.loads(uploaded) == feed_sample
+
+
+@responses.activate
+def test_extract_to_s3_only_has_no_local_path(client, feed_sample, s3_store):
+    responses.get(FEED_ALL_DAY, json=feed_sample)
+
+    result = extract_feed(client, [s3_store], RUN_TS)
+
+    assert result.path is None
+    assert result.locations[0].startswith("s3://")
+
+
+@responses.activate
+def test_cli_uploads_when_raw_storage_includes_s3(
+    feed_sample, tmp_path, s3, s3_store, monkeypatch
+):
+    responses.get(FEED_ALL_DAY, json=feed_sample)
+    monkeypatch.setenv("RAW_STORAGE", "local,s3")
+    monkeypatch.setenv("RAW_BUCKET", s3_store.bucket)
+
+    main(["--data-dir", str(tmp_path), "feed"])
+
+    keys = [o["Key"] for o in s3.list_objects_v2(Bucket=s3_store.bucket)["Contents"]]
+    assert len(keys) == 1 and keys[0].startswith("raw/feed/all_day/")
     assert len(list((tmp_path / "raw/feed/all_day").rglob("*.geojson"))) == 1

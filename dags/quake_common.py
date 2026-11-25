@@ -21,6 +21,18 @@ DEFAULT_ARGS = {
 }
 
 
+def raw_stores() -> list:
+    """Where extract tasks save raw files, from RAW_STORAGE (set in docker-compose.yml)."""
+    from ingestion.storage import LocalStore, stores_from_env
+
+    stores = stores_from_env(DATA_DIR)
+    # The Postgres load task reads the local copy, so it must stay on until Snowflake
+    # loads straight from S3.
+    if not any(isinstance(s, LocalStore) for s in stores):
+        raise ValueError("RAW_STORAGE must include 'local' while the warehouse is Postgres")
+    return stores
+
+
 def load_files(paths: list[str]) -> dict:
     """Load raw files into the warehouse and return totals (small enough for XCom)."""
     from airflow.providers.postgres.hooks.postgres import PostgresHook

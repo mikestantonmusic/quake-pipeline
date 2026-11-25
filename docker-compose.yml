@@ -27,6 +27,9 @@ x-airflow-common: &airflow-common
     # in every context (DAG processor, task runner and CLI).
     PYTHONPATH: /opt/airflow:/opt/airflow/dags
     DATA_DIR: /opt/airflow/data
+    # Save raw files locally (read by the Postgres loader) and upload them to S3.
+    # Bucket and AWS credentials come from .env.
+    RAW_STORAGE: local,s3
     DBT_PROJECT_DIR: /opt/airflow/dbt/quake
   volumes:
     - ./dags:/opt/airflow/dags

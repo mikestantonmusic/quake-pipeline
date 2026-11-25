@@ -9,7 +9,7 @@ from datetime import date, datetime, time
 
 from airflow.exceptions import AirflowFailException
 from airflow.sdk import Param, dag, get_current_context, task
-from quake_common import DATA_DIR, DEFAULT_ARGS, dbt_task_group, load_files
+from quake_common import DEFAULT_ARGS, dbt_task_group, load_files, raw_stores
 
 
 @dag(
@@ -41,7 +41,7 @@ def quake_backfill():
             raise AirflowFailException(
                 f"end ({params['end']}) must be after start ({params['start']})"
             )
-        return [str(r.path) for r in extract_range(USGSClient(), DATA_DIR, start, end)]
+        return [str(r.path) for r in extract_range(USGSClient(), raw_stores(), start, end)]
 
     @task
     def load(paths: list[str]) -> dict:

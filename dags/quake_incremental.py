@@ -7,7 +7,7 @@ event first appears are picked up. Loading is idempotent, so the overlap creates
 from datetime import datetime
 
 from airflow.sdk import dag, get_current_context, task
-from quake_common import DATA_DIR, DEFAULT_ARGS, dbt_task_group, load_files
+from quake_common import DEFAULT_ARGS, dbt_task_group, load_files, raw_stores
 
 
 @dag(
@@ -27,7 +27,7 @@ def quake_incremental():
 
         # run_after is fixed for a given run, so a retried task overwrites the same file.
         run_after = get_current_context()["dag_run"].run_after
-        result = extract_feed(USGSClient(), DATA_DIR, run_after, level="all", period="day")
+        result = extract_feed(USGSClient(), raw_stores(), run_after, level="all", period="day")
         return str(result.path)
 
     @task

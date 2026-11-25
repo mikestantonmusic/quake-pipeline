@@ -2,4 +2,6 @@ requests
 tenacity
 pydantic
 psycopg2-binary
+# S3 uploads; the version comes from Airflow's constraints file (see Dockerfile).
+boto3
 astronomer-cosmos==1.16.0

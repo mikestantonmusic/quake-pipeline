@@ -7,6 +7,10 @@ requires-python = ">=3.12"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = [".", "dashboard"]
+filterwarnings = [
+    # Raised inside botocore (AWS SDK), not our code.
+    'ignore:datetime.datetime.utcnow\(\) is deprecated:DeprecationWarning:botocore',
+]
 
 [tool.ruff]
 line-length = 100

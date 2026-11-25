@@ -1,12 +1,13 @@
 """Extract: download USGS data and save it unchanged to the raw landing zone.
 
 Files are named deterministically from the window they cover, so re-running the same
-extract overwrites the same file instead of creating duplicates.
+extract overwrites the same file instead of creating duplicates. The same key is used in
+every store (see ingestion.storage): under data/ locally and in the S3 bucket.
 
-    data/raw/feed/<level>_<period>/YYYY/MM/DD/<run_ts>.geojson
-    data/raw/fdsn/YYYY/MM/DD/<start>_<end>.geojson
+    raw/feed/<level>_<period>/YYYY/MM/DD/<run_ts>.geojson
+    raw/fdsn/YYYY/MM/DD/<start>_<end>.geojson
 
-CLI:
+CLI (RAW_STORAGE=local,s3 also uploads to S3):
     python -m ingestion.extract feed --level all --period day
     python -m ingestion.extract range --start 2026-10-01 --end 2026-10-02
 """
@@ -17,11 +18,13 @@ import argparse
 import json
 import logging
 import os
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
 from ingestion.schemas import validate_features
+from ingestion.storage import LocalStore, RawStore, stores_from_env
 from ingestion.usgs_client import USGSClient, Window, to_utc
 
 log = logging.getLogger(__name__)
@@ -29,11 +32,22 @@ log = logging.getLogger(__name__)
 TS_FORMAT = "%Y%m%dT%H%M%SZ"
 
 
+# Either the stores to write to, or a data directory (shorthand for one LocalStore).
+Destination = Path | str | Sequence[RawStore]
+
+
 @dataclass(frozen=True)
 class ExtractResult:
-    path: Path
+    key: str
+    locations: tuple[str, ...]  # one per store: a local path or an s3:// URI
     n_features: int
     n_invalid: int
+
+    @property
+    def path(self) -> Path | None:
+        """The local copy, if one of the stores was local (the Postgres loader reads it)."""
+        local = [loc for loc in self.locations if not loc.startswith("s3://")]
+        return Path(local[0]) if local else None
 
 
 def default_data_dir() -> Path:
@@ -42,7 +56,7 @@ def default_data_dir() -> Path:
 
 def extract_feed(
     client: USGSClient,
-    data_dir: Path,
+    dest: Destination,
     run_ts: datetime,
     level: str = "all",
     period: str = "day",
@@ -50,42 +64,49 @@ def extract_feed(
     """Download a summary feed and save it under the run timestamp."""
     run_ts = to_utc(run_ts)
     payload = client.fetch_feed(level, period)
-    path = (
-        Path(data_dir) / "raw" / "feed" / f"{level}_{period}"
-        / run_ts.strftime("%Y/%m/%d") / f"{run_ts.strftime(TS_FORMAT)}.geojson"
+    key = (
+        f"raw/feed/{level}_{period}/{run_ts.strftime('%Y/%m/%d')}/"
+        f"{run_ts.strftime(TS_FORMAT)}.geojson"
     )
-    return _save(payload, path)
+    return _save(payload, key, _stores(dest))
 
 
 def extract_range(
-    client: USGSClient, data_dir: Path, start: datetime, end: datetime
+    client: USGSClient, dest: Destination, start: datetime, end: datetime
 ) -> list[ExtractResult]:
     """Download [start, end) from the FDSN API, saving one file per query window."""
+    stores = _stores(dest)
     return [
-        _save(payload, _window_path(Path(data_dir), window))
+        _save(payload, _window_key(window), stores)
         for window, payload in client.fetch_range(start, end)
     ]
 
 
-def _window_path(data_dir: Path, window: Window) -> Path:
+def _stores(dest: Destination) -> list[RawStore]:
+    if isinstance(dest, Path | str):
+        return [LocalStore(dest)]
+    return list(dest)
+
+
+def _window_key(window: Window) -> str:
     name = f"{window.start.strftime(TS_FORMAT)}_{window.end.strftime(TS_FORMAT)}.geojson"
-    return data_dir / "raw" / "fdsn" / window.start.strftime("%Y/%m/%d") / name
+    return f"raw/fdsn/{window.start.strftime('%Y/%m/%d')}/{name}"
 
 
-def _save(payload: dict, path: Path) -> ExtractResult:
+def _save(payload: dict, key: str, stores: Sequence[RawStore]) -> ExtractResult:
     features = payload.get("features", [])
     validation = validate_features(features)
     for event_id, error in validation.invalid:
         log.warning("Invalid feature %s: %s", event_id, error)
 
-    # Write to a temp file then rename, so a crash never leaves a half-written file behind.
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(payload), encoding="utf-8")
-    os.replace(tmp, path)
+    body = json.dumps(payload).encode("utf-8")
+    locations = tuple(store.write(key, body) for store in stores)
 
-    result = ExtractResult(path, len(features), len(validation.invalid))
-    log.info("Saved %d features (%d invalid) to %s", result.n_features, result.n_invalid, path)
+    result = ExtractResult(key, locations, len(features), len(validation.invalid))
+    log.info(
+        "Saved %d features (%d invalid) to %s",
+        result.n_features, result.n_invalid, ", ".join(locations),
+    )
     return result
 
 
@@ -94,7 +115,9 @@ def _parse_dt(value: str) -> datetime:
 
 
 def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(description="Download USGS earthquake data to data/raw.")
+    parser = argparse.ArgumentParser(
+        description="Download USGS earthquake data to data/raw (and S3 if RAW_STORAGE says so)."
+    )
     parser.add_argument("--data-dir", type=Path, default=default_data_dir())
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -109,11 +132,12 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     client = USGSClient()
+    stores = stores_from_env(args.data_dir)
 
     if args.command == "feed":
-        extract_feed(client, args.data_dir, datetime.now(UTC), args.level, args.period)
+        extract_feed(client, stores, datetime.now(UTC), args.level, args.period)
     else:
-        results = extract_range(client, args.data_dir, args.start, args.end)
+        results = extract_range(client, stores, args.start, args.end)
         total = sum(r.n_features for r in results)
         log.info("Done: %d features in %d file(s)", total, len(results))
 

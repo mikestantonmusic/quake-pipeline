@@ -5,9 +5,12 @@ requests
 tenacity
 pydantic
 psycopg2-binary==2.9.13
+# Same versions Airflow's constraints install in the Docker image.
+boto3==1.39.11
 -r dashboard/requirements.txt
 pytest==9.2.0
 responses
+moto[s3]==5.1.10
 ruff==0.17.3
 sqlfluff==4.5.0
 pre-commit==4.7.0
