@@ -1,0 +1,18 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadWriteRawFiles",
+      "Effect": "Allow",
+      "Action": ["s3:PutObject", "s3:GetObject"],
+      "Resource": "arn:aws:s3:::quake-pipeline-raw-phs67z/raw/*"
+    },
+    {
+      "Sid": "ListRawPrefix",
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::quake-pipeline-raw-phs67z",
+      "Condition": { "StringLike": { "s3:prefix": ["raw/*"] } }
+    }
+  ]
+}
