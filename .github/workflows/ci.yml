@@ -89,7 +89,11 @@ jobs:
           pip install requests tenacity pydantic psycopg2-binary==2.9.13
           python -m venv "$RUNNER_TEMP/dbt"
           "$RUNNER_TEMP/dbt/bin/pip" install dbt-core==1.12.6 dbt-postgres==1.9.0
-          echo "$RUNNER_TEMP/dbt/bin" >> "$GITHUB_PATH"
+          # Put only the dbt command on PATH. Adding the whole venv bin/ would also
+          # shadow `python`, and the loader would then run without its packages.
+          mkdir -p "$RUNNER_TEMP/bin"
+          ln -s "$RUNNER_TEMP/dbt/bin/dbt" "$RUNNER_TEMP/bin/dbt"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
       - name: Load fixture events into raw (same loader the pipeline uses)
         run: |
           mkdir -p ci-data/raw/feed/all_day/2026/10/28
