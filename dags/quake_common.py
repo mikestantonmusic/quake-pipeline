@@ -8,9 +8,8 @@ from cosmos import DbtTaskGroup, ExecutionConfig, ProfileConfig, ProjectConfig
 from cosmos.constants import TestIndirectSelection
 
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/opt/airflow/data"))
-DBT_PROJECT_DIR = Path(os.environ.get("DBT_PROJECT_DIR", "/opt/airflow/dbt/quake_postgres"))
+DBT_PROJECT_DIR = Path(os.environ.get("DBT_PROJECT_DIR", "/opt/airflow/dbt/quake"))
 DBT_EXECUTABLE = "/home/airflow/dbt-venv/bin/dbt"
-WAREHOUSE_CONN_ID = "warehouse"
 # One slot, created by airflow-init: dbt tasks from different DAG runs never overlap.
 DBT_POOL = "dbt"
 
@@ -23,40 +22,38 @@ DEFAULT_ARGS = {
 
 def raw_stores() -> list:
     """Where extract tasks save raw files, from RAW_STORAGE (set in docker-compose.yml)."""
-    from ingestion.storage import LocalStore, stores_from_env
+    from ingestion.storage import stores_from_env
 
-    stores = stores_from_env(DATA_DIR)
-    # The Postgres load task reads the local copy, so it must stay on until Snowflake
-    # loads straight from S3.
-    if not any(isinstance(s, LocalStore) for s in stores):
-        raise ValueError("RAW_STORAGE must include 'local' while the warehouse is Postgres")
-    return stores
+    return stores_from_env(DATA_DIR)
 
 
-def load_files(paths: list[str]) -> dict:
-    """Load raw files into the warehouse and return totals (small enough for XCom)."""
-    from airflow.providers.postgres.hooks.postgres import PostgresHook
+def copy_into_snowflake() -> dict:
+    """COPY new raw files from S3 into Snowflake; return totals (small enough for XCom).
 
-    from ingestion.load import load_paths
+    Fails the task if any file failed to load, after recording every file in
+    raw.load_audit. COPY skips files it already loaded, so a retry only redoes the failures.
+    """
+    from ingestion.snowflake_load import connect_from_env, copy_new_files, ensure_tables
 
-    conn = PostgresHook(postgres_conn_id=WAREHOUSE_CONN_ID).get_conn()
+    conn = connect_from_env()
     try:
-        results = load_paths(conn, [Path(p) for p in paths], DATA_DIR)
+        ensure_tables(conn)
+        results = copy_new_files(conn)
     finally:
         conn.close()
-    return {
-        "files": len(results),
-        "features": sum(r.n_features for r in results),
-        "new_versions": sum(r.n_inserted for r in results),
-        "invalid": sum(r.n_invalid for r in results),
-    }
+    failed = [r.file for r in results if not r.ok]
+    if failed:
+        raise RuntimeError(f"{len(failed)} file(s) failed to load: {failed[:5]}")
+    return {"files_loaded": len(results)}
 
 
 def dbt_task_group(group_id: str = "transform") -> DbtTaskGroup:
     """One Airflow task per dbt model and seed, each followed by its tests."""
     return DbtTaskGroup(
         group_id=group_id,
-        project_config=ProjectConfig(DBT_PROJECT_DIR),
+        # Packages are installed in the image at build time (see the Dockerfile), so neither
+        # parsing nor each task needs to run `dbt deps`.
+        project_config=ProjectConfig(DBT_PROJECT_DIR, install_dbt_deps=False),
         profile_config=ProfileConfig(
             profile_name="quake",
             target_name="dev",

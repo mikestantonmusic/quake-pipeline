@@ -1,23 +1,40 @@
-"""Smoke test: confirms Airflow can reach the warehouse and the layer schemas exist."""
+"""Smoke test: confirms Airflow can reach S3 and Snowflake, and that dbt is installed.
+
+Uses only metadata calls, so it doesn't start the Snowflake warehouse.
+"""
 
 from datetime import datetime
 
-from airflow.providers.postgres.hooks.postgres import PostgresHook
 from airflow.sdk import dag, task
 
-EXPECTED_SCHEMAS = {"raw", "staging", "marts"}
+EXPECTED_SCHEMAS = {"RAW", "STAGING", "MARTS"}
 
 
 @dag(schedule=None, start_date=datetime(2026, 1, 1), catchup=False, tags=["infra"])
 def smoke_test():
     @task
-    def check_warehouse() -> list[str]:
-        hook = PostgresHook(postgres_conn_id="warehouse")
-        rows = hook.get_records("select schema_name from information_schema.schemata")
-        found = {r[0] for r in rows}
+    def check_s3() -> str:
+        import os
+
+        import boto3
+
+        bucket = os.environ["RAW_BUCKET"]
+        boto3.client("s3").list_objects_v2(Bucket=bucket, Prefix="raw/", MaxKeys=1)
+        return bucket
+
+    @task
+    def check_snowflake() -> list[str]:
+        from ingestion.snowflake_load import connect_from_env
+
+        conn = connect_from_env()
+        try:
+            rows = conn.cursor().execute("show schemas in database").fetchall()
+        finally:
+            conn.close()
+        found = {r[1] for r in rows}
         missing = EXPECTED_SCHEMAS - found
         if missing:
-            raise RuntimeError(f"Missing warehouse schemas: {sorted(missing)}")
+            raise RuntimeError(f"Missing Snowflake schemas: {sorted(missing)}")
         return sorted(EXPECTED_SCHEMAS)
 
     @task
@@ -26,7 +43,8 @@ def smoke_test():
 
         subprocess.run(["dbt", "--version"], check=True)
 
-    check_warehouse()
+    check_s3()
+    check_snowflake()
     check_dbt()
 
 

@@ -27,17 +27,18 @@ x-airflow-common: &airflow-common
     # in every context (DAG processor, task runner and CLI).
     PYTHONPATH: /opt/airflow:/opt/airflow/dags
     DATA_DIR: /opt/airflow/data
-    # Save raw files locally (read by the Postgres loader) and upload them to S3.
-    # Bucket and AWS credentials come from .env.
-    RAW_STORAGE: local,s3
-    # The Postgres dbt project, until the DAGs move to Snowflake (dbt/quake) in a later step.
-    DBT_PROJECT_DIR: /opt/airflow/dbt/quake_postgres
+    # Raw files go to S3 only; Snowflake loads them from there. Bucket and AWS keys: .env.
+    RAW_STORAGE: s3
+    DBT_PROJECT_DIR: /opt/airflow/dbt/quake
+    # Snowflake settings come from .env; the key path is the container's copy of secrets/.
+    SNOWFLAKE_PRIVATE_KEY_PATH: /opt/airflow/secrets/snowflake/pipeline_key.p8
   volumes:
     - ./dags:/opt/airflow/dags
     - ./ingestion:/opt/airflow/ingestion
     - ./dbt:/opt/airflow/dbt
     - ./data:/opt/airflow/data
     - ./logs:/opt/airflow/logs
+    - ./secrets:/opt/airflow/secrets:ro
   user: "${AIRFLOW_UID:-50000}:0"
   depends_on: &airflow-depends
     postgres:

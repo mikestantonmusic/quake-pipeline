@@ -7,6 +7,9 @@ model-paths: ["models"]
 macro-paths: ["macros"]
 seed-paths: ["seeds"]
 test-paths: ["tests"]
+# Where `dbt deps` puts packages. The Airflow image installs them once at build time into
+# DBT_PACKAGES_DIR, because ./dbt is mounted over the image's copy when containers run.
+packages-install-path: "{{ env_var('DBT_PACKAGES_DIR', 'dbt_packages') }}"
 
 models:
   quake:

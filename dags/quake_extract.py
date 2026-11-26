@@ -1,13 +1,15 @@
-"""Hourly pipeline: download the past day of earthquakes, load new versions, rebuild the marts.
+"""Hourly: download the past day of earthquakes to S3.
 
-The all_day feed overlaps the previous run on purpose, so revisions USGS makes after an
-event first appears are picked up. Loading is idempotent, so the overlap creates no duplicates.
+Only extracts; quake_transform loads and transforms once a day, so the Snowflake warehouse
+starts once a day instead of every hour. The all_day feed overlaps the previous run on
+purpose, so revisions USGS makes after an event first appears are picked up. Each run writes
+its own file, and dbt keeps one row per event version, so the overlap creates no duplicates.
 """
 
 from datetime import datetime
 
 from airflow.sdk import dag, get_current_context, task
-from quake_common import DEFAULT_ARGS, dbt_task_group, load_files, raw_stores
+from quake_common import DEFAULT_ARGS, raw_stores
 
 
 @dag(
@@ -19,7 +21,7 @@ from quake_common import DEFAULT_ARGS, dbt_task_group, load_files, raw_stores
     tags=["usgs", "ingestion"],
     doc_md=__doc__,
 )
-def quake_incremental():
+def quake_extract():
     @task
     def extract() -> str:
         from ingestion.extract import extract_feed
@@ -28,13 +30,9 @@ def quake_incremental():
         # run_after is fixed for a given run, so a retried task overwrites the same file.
         run_after = get_current_context()["dag_run"].run_after
         result = extract_feed(USGSClient(), raw_stores(), run_after, level="all", period="day")
-        return str(result.path)
+        return result.key
 
-    @task
-    def load(path: str) -> dict:
-        return load_files([path])
-
-    load(extract()) >> dbt_task_group()
+    extract()
 
 
-quake_incremental()
+quake_extract()
