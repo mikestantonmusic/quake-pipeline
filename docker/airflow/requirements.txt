@@ -1,7 +1,6 @@
 requests
 tenacity
 pydantic
-psycopg2-binary
 # S3 uploads; the version comes from Airflow's constraints file (see Dockerfile).
 boto3
 snowflake-connector-python

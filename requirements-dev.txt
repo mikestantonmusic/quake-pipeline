@@ -4,7 +4,6 @@
 requests
 tenacity
 pydantic
-psycopg2-binary==2.9.13
 # Same versions Airflow's constraints install in the Docker image.
 boto3==1.39.11
 snowflake-connector-python==3.17.2

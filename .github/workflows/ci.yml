@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, cloud]
   pull_request:
 
 # Cancel an older run for the same branch when a newer commit is pushed.
@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  PYTHON_VERSION: "3.12"  # matches the Airflow and Streamlit images
+  PYTHON_VERSION: "3.12"  # matches the Airflow image and the Streamlit Community Cloud app
 
 jobs:
   lint:
@@ -28,25 +28,13 @@ jobs:
       - name: Lint Python
         run: ruff check .
       - name: Lint dbt SQL
-        run: sqlfluff lint dbt/quake/models dbt/quake/tests dbt/quake_postgres/models dbt/quake_postgres/tests
+        run: sqlfluff lint dbt/quake/models dbt/quake/tests
 
   test:
     name: Python tests
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: quake
-          POSTGRES_PASSWORD: quake
-          POSTGRES_DB: warehouse
-        ports: ["5432:5432"]
-        options: >-
-          --health-cmd "pg_isready -U quake"
-          --health-interval 5s --health-timeout 5s --health-retries 10
-    env:
-      # Database tests fail instead of skipping if Postgres isn't reachable.
-      REQUIRE_TEST_DB: "1"
+    # No cloud access: S3 is faked with moto, and Snowflake with stand-in connections and
+    # canned query results.
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -59,52 +47,25 @@ jobs:
         run: pytest -rs
 
   dbt:
-    name: dbt build on fixture data (Postgres project)
+    name: dbt parse (Snowflake project)
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: quake
-          POSTGRES_PASSWORD: quake
-          POSTGRES_DB: warehouse
-        ports: ["5432:5432"]
-        options: >-
-          --health-cmd "pg_isready -U quake"
-          --health-interval 5s --health-timeout 5s --health-retries 10
+    # Parsing checks every model, ref(), source(), macro and YAML file compiles into a valid
+    # project, without connecting to Snowflake. It doesn't run the SQL: that happens daily
+    # in Airflow, where the data tests check the results.
     env:
-      # Read by dbt/quake_postgres/profiles.yml and ingestion/load.py.
-      POSTGRES_USER: quake
-      POSTGRES_PASSWORD: quake
-      WAREHOUSE_DB: warehouse
-      WAREHOUSE_HOST: localhost
-      WAREHOUSE_DSN: postgresql://quake:quake@localhost:5432/warehouse
+      SNOWFLAKE_ACCOUNT: ci-placeholder
+      SNOWFLAKE_USER: ci-placeholder
+      SNOWFLAKE_PRIVATE_KEY_PATH: /dev/null
+      DBT_PROFILES_DIR: .
+    defaults:
+      run:
+        working-directory: dbt/quake
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-      - name: Install loader and dbt (dbt in its own venv, as in the Airflow image)
-        run: |
-          pip install requests tenacity pydantic psycopg2-binary==2.9.13
-          python -m venv "$RUNNER_TEMP/dbt"
-          "$RUNNER_TEMP/dbt/bin/pip" install dbt-core==1.12.6 dbt-postgres==1.9.0
-          # Put only the dbt command on PATH. Adding the whole venv bin/ would also
-          # shadow `python`, and the loader would then run without its packages.
-          mkdir -p "$RUNNER_TEMP/bin"
-          ln -s "$RUNNER_TEMP/dbt/bin/dbt" "$RUNNER_TEMP/bin/dbt"
-          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
-      - name: Load fixture events into raw (same loader the pipeline uses)
-        run: |
-          mkdir -p ci-data/raw/feed/all_day/2026/10/28
-          cp tests/fixtures/feed_sample.geojson ci-data/raw/feed/all_day/2026/10/28/
-          python -m ingestion.load --data-dir ci-data
-      - name: dbt deps
-        working-directory: dbt/quake_postgres
-        run: dbt deps
-      - name: dbt build (full)
-        working-directory: dbt/quake_postgres
-        run: dbt build
-      - name: dbt build (incremental path)
-        working-directory: dbt/quake_postgres
-        run: dbt build
+      - name: Install dbt (same versions as the Airflow image)
+        run: pip install dbt-core==1.12.6 dbt-snowflake==1.12.5
+      - run: dbt deps
+      - run: dbt parse

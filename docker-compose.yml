@@ -21,8 +21,6 @@ x-airflow-common: &airflow-common
     AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_ALL_ADMINS: "true"
     # Must be identical across Airflow components so tasks can authenticate to the API server.
     AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_JWT_SECRET}
-    # Connection used by DAGs to reach the warehouse database.
-    AIRFLOW_CONN_WAREHOUSE: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${WAREHOUSE_DB}
     # /opt/airflow for the ingestion package; dags so DAG files can import quake_common
     # in every context (DAG processor, task runner and CLI).
     PYTHONPATH: /opt/airflow:/opt/airflow/dags

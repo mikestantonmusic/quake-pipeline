@@ -42,8 +42,9 @@ t1, t2, t3, t4 = st.columns(4)
 t1.metric(
     "Hourly files before last load",
     "–" if last_load is None else f"{metrics.hourly_coverage(files, last_load)} / 24",
-    help="Clock hours in the 24 h before the last load with a feed file in S3. "
-    "Below 24 means missed extract runs.",
+    help="Clock hours in the 24 h before the last load with a feed file in S3. Below 24 "
+    "means Airflow wasn't running for some hours (e.g. the laptop was asleep). No data is "
+    "lost unless it's off for more than 24 h: each file holds the past day of earthquakes.",
 )
 newest = events["occurred_at"].max() if not events.empty else None
 t2.metric(
