@@ -27,6 +27,19 @@ def raw_stores() -> list:
     return stores_from_env(DATA_DIR)
 
 
+def extract_latest_feed(run_ts) -> str:
+    """Download the USGS past-day feed to the raw stores; return the file's key.
+
+    Used by quake_extract every hour and by quake_transform just before it loads, so a
+    load always includes a download from moments earlier.
+    """
+    from ingestion.extract import extract_feed
+    from ingestion.usgs_client import USGSClient
+
+    result = extract_feed(USGSClient(), raw_stores(), run_ts, level="all", period="day")
+    return result.key
+
+
 def copy_into_snowflake() -> dict:
     """COPY new raw files from S3 into Snowflake; return totals (small enough for XCom).
 

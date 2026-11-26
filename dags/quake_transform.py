@@ -1,13 +1,17 @@
-"""Daily: load new raw files from S3 into Snowflake, then rebuild and test the dbt models.
+"""Daily: download the latest feed, load new raw files into Snowflake, rebuild the dbt models.
+
+The download runs first, so every load includes data from moments earlier, even when the
+laptop was asleep at 06:00 and this run starts late, at the same time as quake_extract.
 
 COPY INTO skips files it has already loaded, so a run loads only what arrived since the
-last one, whether from the hourly extract or a backfill. Also triggered by quake_backfill.
+last one, whether from the hourly extract, this run's download or a backfill. Also
+triggered by quake_backfill.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from airflow.sdk import dag, task
-from quake_common import DEFAULT_ARGS, copy_into_snowflake, dbt_task_group
+from quake_common import DEFAULT_ARGS, copy_into_snowflake, dbt_task_group, extract_latest_feed
 
 
 @dag(
@@ -21,10 +25,18 @@ from quake_common import DEFAULT_ARGS, copy_into_snowflake, dbt_task_group
 )
 def quake_transform():
     @task
+    def extract() -> str:
+        # The actual time, not the scheduled 06:00: a late run's file is named for when the
+        # data was downloaded. A retry writes a second file, which is harmless.
+        return extract_latest_feed(datetime.now(UTC))
+
+    # all_done: if USGS is down, still load the files already in S3. The failed download
+    # still shows red in Airflow.
+    @task(trigger_rule="all_done")
     def load() -> dict:
         return copy_into_snowflake()
 
-    load() >> dbt_task_group()
+    extract() >> load() >> dbt_task_group()
 
 
 quake_transform()

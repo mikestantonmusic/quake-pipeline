@@ -9,7 +9,7 @@ its own file, and dbt keeps one row per event version, so the overlap creates no
 from datetime import datetime
 
 from airflow.sdk import dag, get_current_context, task
-from quake_common import DEFAULT_ARGS, raw_stores
+from quake_common import DEFAULT_ARGS, extract_latest_feed
 
 
 @dag(
@@ -24,13 +24,8 @@ from quake_common import DEFAULT_ARGS, raw_stores
 def quake_extract():
     @task
     def extract() -> str:
-        from ingestion.extract import extract_feed
-        from ingestion.usgs_client import USGSClient
-
         # run_after is fixed for a given run, so a retried task overwrites the same file.
-        run_after = get_current_context()["dag_run"].run_after
-        result = extract_feed(USGSClient(), raw_stores(), run_after, level="all", period="day")
-        return result.key
+        return extract_latest_feed(get_current_context()["dag_run"].run_after)
 
     extract()
 
