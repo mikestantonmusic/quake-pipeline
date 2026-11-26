@@ -7,7 +7,7 @@ import streamlit as st
 import charts
 import db
 import metrics
-from queries import Filters
+from metrics import Filters
 
 MAG_OPTIONS = ["All", 1, 2, 3, 4, 5, 6]
 mode = st.context.theme.type  # "light", "dark", or None before the browser reports it
@@ -15,12 +15,13 @@ mode = st.context.theme.type  # "light", "dark", or None before the browser repo
 st.title("Earthquakes")
 
 try:
-    bounds = db.date_bounds(db.engine())
+    all_events = db.events()
 except Exception as exc:  # show connection problems on the page instead of a traceback
     st.error(f"Can't reach the warehouse: {exc}", icon=":material/error:")
     st.stop()
+bounds = metrics.date_bounds(all_events)
 if bounds is None:
-    st.info("No earthquakes in the warehouse yet. Run the quake_incremental or quake_backfill DAG.")
+    st.info("No earthquakes in the warehouse yet. Run the quake_backfill DAG.")
     st.stop()
 first, last = bounds
 
@@ -33,7 +34,9 @@ picked = f_dates.date_input(
     max_value=last,
 )
 min_mag = f_mag.select_slider("Minimum magnitude", options=MAG_OPTIONS, value="All")
-chosen = f_regions.multiselect("Regions", db.regions(db.engine()), placeholder="All regions")
+chosen = f_regions.multiselect(
+    "Regions", metrics.region_options(all_events), placeholder="All regions"
+)
 
 if not isinstance(picked, tuple) or len(picked) != 2:
     st.info("Pick an end date to finish the range.")
@@ -41,7 +44,7 @@ if not isinstance(picked, tuple) or len(picked) != 2:
 
 start, end = picked
 filters = Filters(start, end, None if min_mag == "All" else float(min_mag), tuple(chosen))
-events = db.events(db.engine(), filters)
+events = metrics.filter_events(all_events, filters)
 
 k = metrics.kpis(events)
 t1, t2, t3, t4 = st.columns(4)
@@ -118,4 +121,7 @@ with right:
         },
     )
 
-st.caption("Source: USGS earthquake feeds, refreshed hourly. Data is cached for 5 minutes.")
+st.caption(
+    "Source: USGS earthquake feeds, downloaded hourly and loaded into Snowflake daily at "
+    "06:00 UTC. Data is cached for an hour."
+)

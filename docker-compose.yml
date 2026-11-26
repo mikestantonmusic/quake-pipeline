@@ -106,18 +106,19 @@ services:
   streamlit:
     build:
       context: ./dashboard
-    env_file: .env
+    # The same read-only Snowflake user as the hosted app (Streamlit Community Cloud), but
+    # configured with environment variables and the key file instead of secrets.toml.
     environment:
-      # SQLAlchemy URL; the driver is explicit because SQLAlchemy 2.1+ defaults to psycopg 3.
-      WAREHOUSE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${WAREHOUSE_DB}
+      DASHBOARD_SNOWFLAKE_ACCOUNT: ${SNOWFLAKE_ACCOUNT}
+      DASHBOARD_SNOWFLAKE_USER: DASHBOARD_USER
+      DASHBOARD_SNOWFLAKE_ROLE: REPORTER_ROLE
+      DASHBOARD_SNOWFLAKE_PRIVATE_KEY_FILE: /secrets/snowflake/dashboard_key.p8
     ports:
       - "8501:8501"
     volumes:
       - ./dashboard:/app
+      - ./secrets:/secrets:ro
     restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
 
 volumes:
   pgdata:

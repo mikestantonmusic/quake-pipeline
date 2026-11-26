@@ -18,3 +18,5 @@ dbt/**/.user.yml
 # Private keys (Snowflake key-pair auth). Never commit.
 secrets/
 *.p8
+# Streamlit secrets (the dashboard's Snowflake key). Never commit.
+dashboard/.streamlit/secrets.toml

@@ -42,6 +42,33 @@ models:
       - dbt_utils.unique_combination_of_columns:
           arguments:
             combination_of_columns: [occurred_date, region]
+  - name: pipeline_files
+    description: >
+      One row per raw file per COPY attempt, with its load status and size. Read by the
+      dashboard's pipeline health page.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [source_file, loaded_at]
+    columns:
+      - name: source_file
+        description: S3 key, e.g. raw/feed/all_day/2026/11/25/20261125T1300Z.geojson.
+        data_tests: [not_null]
+      - name: source
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [feed, fdsn]
+      - name: status
+        description: LOADED, LOAD_FAILED or PARTIALLY_LOADED, as reported by COPY INTO.
+        data_tests: [not_null]
+      - name: n_features
+        description: Events in the file (null if it failed to load).
+      - name: file_last_modified
+        description: When the file was written to S3, i.e. when the extract ran.
+      - name: loaded_at
+        description: When the COPY that loaded the file ran.
+        data_tests: [not_null]
 
 seeds:
   - name: region_aliases

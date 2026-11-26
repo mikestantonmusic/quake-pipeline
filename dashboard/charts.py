@@ -129,21 +129,18 @@ def region_bars(regions: pd.DataFrame, mode: str | None) -> alt.Chart:
     return _style(chart, p, height=max(160, 28 * len(regions)))
 
 
-def loads_bars(loads: pd.DataFrame, mode: str | None) -> alt.Chart:
-    """New event versions inserted by each load."""
+def files_bars(daily: pd.DataFrame, mode: str | None) -> alt.Chart:
+    """Files loaded into Snowflake per day (about 24 hourly files on a normal day)."""
     p = palette(mode)
     chart = (
-        alt.Chart(loads)
-        .mark_bar(color=p["series"], size=6, cornerRadiusEnd=2)
+        alt.Chart(daily)
+        .mark_bar(color=p["series"], cornerRadiusEnd=2)
         .encode(
-            x=alt.X("finished_at:T", title=None, axis=alt.Axis(format="%d %b %H:%M")),
-            y=alt.Y("n_inserted:Q", title="New versions per load"),
+            x=alt.X("date:T", title=None, axis=alt.Axis(format="%d %b")),
+            y=alt.Y("files:Q", title="Files loaded"),
             tooltip=[
-                alt.Tooltip("finished_at:T", title="Finished (UTC)", format="%d %b %Y %H:%M"),
-                alt.Tooltip("source:N", title="Source"),
-                alt.Tooltip("n_features:Q", title="Events in file"),
-                alt.Tooltip("n_inserted:Q", title="New versions"),
-                alt.Tooltip("n_invalid:Q", title="Invalid"),
+                alt.Tooltip("date:T", title="Day (UTC)", format="%a %d %b %Y"),
+                alt.Tooltip("files:Q", title="Files loaded"),
             ],
         )
     )

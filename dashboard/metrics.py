@@ -2,13 +2,45 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
 import pandas as pd
 
-# Matches the dbt source freshness rule on raw.earthquake_events.
-FRESH_WARN_AFTER = timedelta(hours=2)
-FRESH_ERROR_AFTER = timedelta(hours=26)
+# Loads run once a day. Matches the dbt source freshness rule on raw.feed_files.
+FRESH_WARN_AFTER = timedelta(hours=26)
+FRESH_ERROR_AFTER = timedelta(hours=50)
+
+
+@dataclass(frozen=True)
+class Filters:
+    start: date
+    end: date  # inclusive
+    min_mag: float | None = None  # None = no magnitude filter (keeps events without one)
+    regions: tuple[str, ...] = ()  # empty = all regions
+
+
+def filter_events(events: pd.DataFrame, f: Filters) -> pd.DataFrame:
+    """The earthquakes matching the filters."""
+    keep = events["occurred_date"].between(f.start, f.end)
+    if f.min_mag is not None:
+        keep &= events["mag"] >= f.min_mag
+    if f.regions:
+        keep &= events["region"].isin(f.regions)
+    return events[keep]
+
+
+def date_bounds(events: pd.DataFrame) -> tuple[date, date] | None:
+    """First and last day with data, or None if there are no earthquakes."""
+    if events.empty:
+        return None
+    return events["occurred_date"].min(), events["occurred_date"].max()
+
+
+def region_options(events: pd.DataFrame) -> list[str]:
+    """All regions, busiest first (for the region filter)."""
+    counts = events["region"].value_counts()
+    return sorted(counts.index, key=lambda r: (-counts[r], r))
 
 
 def kpis(events: pd.DataFrame) -> dict:
@@ -64,17 +96,36 @@ def freshness(age: timedelta | None) -> tuple[str, str]:
     if age is None:
         return "critical", "No loads recorded"
     if age <= FRESH_WARN_AFTER:
-        return "good", f"Fresh: last load {humanize(age)} ago"
+        return "good", f"Fresh: last load into Snowflake {humanize(age)} ago"
     if age <= FRESH_ERROR_AFTER:
-        return "warning", f"Behind: last load {humanize(age)} ago (expected hourly)"
+        return "warning", f"Behind: last load {humanize(age)} ago (expected daily)"
     return "critical", f"Stale: last load {humanize(age)} ago"
 
 
-def hourly_coverage(loads: pd.DataFrame, now: datetime, hours: int = 24) -> int:
-    """How many of the last `hours` clock hours had at least one feed load."""
-    feed = loads[loads["source"] == "feed"]
-    recent = feed[feed["finished_at"] > now - timedelta(hours=hours)]
-    return recent["finished_at"].dt.floor("h").nunique()
+def last_load_at(files: pd.DataFrame) -> datetime | None:
+    """When a file was last loaded successfully."""
+    loaded = files.loc[files["status"] == "LOADED", "loaded_at"]
+    return None if loaded.empty else loaded.max()
+
+
+def hourly_coverage(files: pd.DataFrame, until: datetime, hours: int = 24) -> int:
+    """How many of the `hours` clock hours before `until` produced a feed file in S3.
+
+    Measured up to the last load, since files written after it aren't in Snowflake yet.
+    """
+    feed = files[(files["source"] == "feed") & (files["status"] == "LOADED")]
+    written = feed["file_last_modified"]
+    recent = written[(written > until - timedelta(hours=hours)) & (written <= until)]
+    return recent.dt.floor("h").nunique()
+
+
+def files_per_day(files: pd.DataFrame, now: datetime, days: int = 14) -> pd.DataFrame:
+    """Files loaded per UTC day over the last `days` days, including days with none."""
+    end = pd.Timestamp(now).tz_convert("UTC").normalize()
+    day_index = pd.date_range(end - pd.Timedelta(days=days - 1), end, freq="D")
+    loaded = files.loc[files["status"] == "LOADED", "loaded_at"].dt.floor("D")
+    counts = loaded.value_counts().reindex(day_index, fill_value=0)
+    return pd.DataFrame({"date": day_index, "files": counts.to_numpy()})
 
 
 def humanize(delta: timedelta) -> str:
