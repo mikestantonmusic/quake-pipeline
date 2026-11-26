@@ -1,0 +1,8 @@
+# Overrides the repo-root .sqlfluff for the Snowflake dbt project.
+[sqlfluff]
+dialect = snowflake
+
+# Column names kept from the USGS fields and the Postgres version. Snowflake doesn't reserve
+# them, but sqlfluff lists them as keywords.
+[sqlfluff:rules:references.keywords]
+ignore_words = alert,network,url

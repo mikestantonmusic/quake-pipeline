@@ -28,7 +28,7 @@ jobs:
       - name: Lint Python
         run: ruff check .
       - name: Lint dbt SQL
-        run: sqlfluff lint dbt/quake/models dbt/quake/tests
+        run: sqlfluff lint dbt/quake/models dbt/quake/tests dbt/quake_postgres/models dbt/quake_postgres/tests
 
   test:
     name: Python tests
@@ -59,7 +59,7 @@ jobs:
         run: pytest -rs
 
   dbt:
-    name: dbt build on fixture data
+    name: dbt build on fixture data (Postgres project)
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -73,7 +73,7 @@ jobs:
           --health-cmd "pg_isready -U quake"
           --health-interval 5s --health-timeout 5s --health-retries 10
     env:
-      # Read by dbt/quake/profiles.yml and ingestion/load.py.
+      # Read by dbt/quake_postgres/profiles.yml and ingestion/load.py.
       POSTGRES_USER: quake
       POSTGRES_PASSWORD: quake
       WAREHOUSE_DB: warehouse
@@ -100,11 +100,11 @@ jobs:
           cp tests/fixtures/feed_sample.geojson ci-data/raw/feed/all_day/2026/10/28/
           python -m ingestion.load --data-dir ci-data
       - name: dbt deps
-        working-directory: dbt/quake
+        working-directory: dbt/quake_postgres
         run: dbt deps
       - name: dbt build (full)
-        working-directory: dbt/quake
+        working-directory: dbt/quake_postgres
         run: dbt build
       - name: dbt build (incremental path)
-        working-directory: dbt/quake
+        working-directory: dbt/quake_postgres
         run: dbt build

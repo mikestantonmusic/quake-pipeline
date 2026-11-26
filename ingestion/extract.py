@@ -18,9 +18,9 @@ import argparse
 import json
 import logging
 import os
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from ingestion.schemas import validate_features
@@ -74,12 +74,27 @@ def extract_feed(
 def extract_range(
     client: USGSClient, dest: Destination, start: datetime, end: datetime
 ) -> list[ExtractResult]:
-    """Download [start, end) from the FDSN API, saving one file per query window."""
+    """Download [start, end) from the FDSN API, saving one file per UTC day.
+
+    Splitting by day keeps files small (one VARIANT row each in Snowflake) and makes a
+    day's file name independent of the range requested, so re-running any range that
+    covers a day overwrites that day's file. A day over the API's 20,000-event limit is
+    split further into smaller windows, one file each.
+    """
     stores = _stores(dest)
     return [
         _save(payload, _window_key(window), stores)
-        for window, payload in client.fetch_range(start, end)
+        for day_start, day_end in utc_days(to_utc(start), to_utc(end))
+        for window, payload in client.fetch_range(day_start, day_end)
     ]
+
+
+def utc_days(start: datetime, end: datetime) -> Iterator[tuple[datetime, datetime]]:
+    """Split [start, end) at UTC midnights. Partial days at either end are kept as-is."""
+    while start < end:
+        next_midnight = datetime.combine(start.date() + timedelta(days=1), datetime.min.time(), UTC)
+        yield start, min(next_midnight, end)
+        start = next_midnight
 
 
 def _stores(dest: Destination) -> list[RawStore]:

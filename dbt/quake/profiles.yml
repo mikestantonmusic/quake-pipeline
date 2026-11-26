@@ -1,13 +1,17 @@
-# Lives in the project so it's versioned; credentials come from the environment (.env).
+# Lives in the project so it's versioned; settings come from the environment (.env).
+# Signs in as the pipeline user with its private key (infra/snowflake/02_pipeline_user.sql).
 quake:
   target: dev
   outputs:
     dev:
-      type: postgres
-      host: "{{ env_var('WAREHOUSE_HOST', 'postgres') }}"
-      port: 5432
-      user: "{{ env_var('POSTGRES_USER') }}"
-      password: "{{ env_var('POSTGRES_PASSWORD') }}"
-      dbname: "{{ env_var('DBT_DBNAME', env_var('WAREHOUSE_DB')) }}"
-      schema: public
+      type: snowflake
+      account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
+      user: "{{ env_var('SNOWFLAKE_USER') }}"
+      private_key_path: "{{ env_var('SNOWFLAKE_PRIVATE_KEY_PATH') }}"
+      role: "{{ env_var('SNOWFLAKE_ROLE', 'PIPELINE_ROLE') }}"
+      warehouse: "{{ env_var('SNOWFLAKE_WAREHOUSE', 'QUAKE_WH') }}"
+      database: "{{ env_var('SNOWFLAKE_DATABASE', 'QUAKE') }}"
+      schema: staging
       threads: 4
+      # Shows up in Snowflake's query history, so dbt's warehouse use is easy to find.
+      query_tag: quake-pipeline:dbt

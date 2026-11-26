@@ -28,7 +28,7 @@ with_place_region as (
 select
     e.event_id,
     e.occurred_at,
-    (e.occurred_at at time zone 'UTC')::date as occurred_date,
+    e.occurred_at::date as occurred_date,  -- occurred_at is already in UTC
     e.updated_at,
     e.mag,
     e.mag_type,
@@ -63,7 +63,8 @@ select
     e.mmi,
     e.network,
     e.url,
-    e.n_versions
+    e.n_versions,
+    e.all_ids
 from with_place_region as e
 left join {{ ref('region_aliases') }} as a
     on e.place_region = a.alias

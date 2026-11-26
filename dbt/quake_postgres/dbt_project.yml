@@ -1,0 +1,21 @@
+name: quake
+version: "1.0.0"
+config-version: 2
+profile: quake
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+seed-paths: ["seeds"]
+test-paths: ["tests"]
+
+models:
+  quake:
+    staging:
+      +schema: staging
+    marts:
+      +schema: marts
+      +materialized: table
+
+seeds:
+  quake:
+    +schema: staging

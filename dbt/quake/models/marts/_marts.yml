@@ -29,6 +29,8 @@ models:
               arguments: {to: ref('dim_region'), field: region}
       - name: is_significant
         description: USGS significance score (sig) of at least 600.
+      - name: all_ids
+        description: Every ID USGS has used for this quake, e.g. ",aka2026tsyezt,us7000ttd7,".
   - name: dim_region
     description: One row per region.
     columns:

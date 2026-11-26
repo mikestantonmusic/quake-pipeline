@@ -10,7 +10,7 @@ repos:
     rev: 4.5.0
     hooks:
       - id: sqlfluff-lint
-        files: ^dbt/quake/(models|tests)/.*\.sql$
+        files: ^dbt/quake(_postgres)?/(models|tests)/.*\.sql$
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0

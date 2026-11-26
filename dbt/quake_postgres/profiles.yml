@@ -1,0 +1,13 @@
+# Lives in the project so it's versioned; credentials come from the environment (.env).
+quake:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: "{{ env_var('WAREHOUSE_HOST', 'postgres') }}"
+      port: 5432
+      user: "{{ env_var('POSTGRES_USER') }}"
+      password: "{{ env_var('POSTGRES_PASSWORD') }}"
+      dbname: "{{ env_var('DBT_DBNAME', env_var('WAREHOUSE_DB')) }}"
+      schema: public
+      threads: 4

@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 
 import responses
 
-from ingestion.extract import extract_feed, extract_range, main
+from ingestion.extract import extract_feed, extract_range, main, utc_days
 from ingestion.storage import LocalStore
 from ingestion.usgs_client import FDSN_URL
 
@@ -110,3 +110,35 @@ def test_cli_uploads_when_raw_storage_includes_s3(
     keys = [o["Key"] for o in s3.list_objects_v2(Bucket=s3_store.bucket)["Contents"]]
     assert len(keys) == 1 and keys[0].startswith("raw/feed/all_day/")
     assert len(list((tmp_path / "raw/feed/all_day").rglob("*.geojson"))) == 1
+
+
+@responses.activate
+def test_extract_range_saves_one_file_per_utc_day(client, tmp_path):
+    for _ in range(3):
+        responses.get(f"{FDSN_URL}/count", json={"count": 10, "maxAllowed": 20000})
+        responses.get(f"{FDSN_URL}/query", json={"type": "FeatureCollection", "features": []})
+
+    results = extract_range(client, tmp_path, datetime(2026, 10, 1), datetime(2026, 10, 4))
+
+    assert [r.key for r in results] == [
+        "raw/fdsn/2026/10/01/20261001T000000Z_20261002T000000Z.geojson",
+        "raw/fdsn/2026/10/02/20261002T000000Z_20261003T000000Z.geojson",
+        "raw/fdsn/2026/10/03/20261003T000000Z_20261004T000000Z.geojson",
+    ]
+
+
+def test_utc_days_keeps_partial_days_at_the_edges():
+    start = datetime(2026, 10, 1, 18, tzinfo=UTC)
+    end = datetime(2026, 10, 3, 6, tzinfo=UTC)
+
+    assert list(utc_days(start, end)) == [
+        (start, datetime(2026, 10, 2, tzinfo=UTC)),
+        (datetime(2026, 10, 2, tzinfo=UTC), datetime(2026, 10, 3, tzinfo=UTC)),
+        (datetime(2026, 10, 3, tzinfo=UTC), end),
+    ]
+
+
+def test_utc_days_empty_when_end_not_after_start():
+    t = datetime(2026, 10, 1, tzinfo=UTC)
+
+    assert list(utc_days(t, t)) == []

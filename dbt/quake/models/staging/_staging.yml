@@ -1,6 +1,23 @@
 version: 2
 
 models:
+  - name: stg_earthquake_versions
+    description: >
+      One row per event version, flattened from the raw files. Each feature is kept once per
+      (event_id, updated_ms), from the first file it was loaded in. Invalid features are skipped.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [event_id, updated_ms]
+    columns:
+      - name: event_id
+        data_tests: [not_null]
+      - name: updated_ms
+        description: When USGS last revised the event (epoch ms); identifies the version.
+        data_tests: [not_null]
+      - name: feature
+        description: The GeoJSON feature as loaded (a VARIANT).
+
   - name: stg_earthquakes
     description: Latest version of every event, as typed columns. Includes non-earthquakes and deleted events.
     columns:

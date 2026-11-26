@@ -1,0 +1,49 @@
+version: 2
+
+models:
+  - name: fct_earthquakes
+    description: One row per earthquake. The main table for analysis and the dashboard.
+    columns:
+      - name: event_id
+        data_tests: [unique, not_null]
+      - name: occurred_at
+        description: When the earthquake happened (UTC).
+        data_tests: [not_null]
+      - name: mag_class
+        description: Standard magnitude band; 'unknown' when magnitude is null.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [unknown, micro, minor, light, moderate, strong, major, great]
+      - name: depth_class
+        description: shallow (<70 km), intermediate (70-300 km) or deep (300+ km).
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [unknown, shallow, intermediate, deep]
+      - name: region
+        description: Text after the last comma in place (or all of place if none), with codes like CA expanded.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments: {to: ref('dim_region'), field: region}
+      - name: is_significant
+        description: USGS significance score (sig) of at least 600.
+  - name: dim_region
+    description: One row per region.
+    columns:
+      - name: region
+        data_tests: [unique, not_null]
+  - name: agg_daily_by_region
+    description: Daily earthquake stats per region.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [occurred_date, region]
+
+seeds:
+  - name: region_aliases
+    description: Maps abbreviations in USGS place names to full region names.
+    columns:
+      - name: alias
+        data_tests: [unique, not_null]

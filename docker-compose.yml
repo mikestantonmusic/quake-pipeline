@@ -30,7 +30,8 @@ x-airflow-common: &airflow-common
     # Save raw files locally (read by the Postgres loader) and upload them to S3.
     # Bucket and AWS credentials come from .env.
     RAW_STORAGE: local,s3
-    DBT_PROJECT_DIR: /opt/airflow/dbt/quake
+    # The Postgres dbt project, until the DAGs move to Snowflake (dbt/quake) in a later step.
+    DBT_PROJECT_DIR: /opt/airflow/dbt/quake_postgres
   volumes:
     - ./dags:/opt/airflow/dags
     - ./ingestion:/opt/airflow/ingestion

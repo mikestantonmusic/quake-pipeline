@@ -8,7 +8,7 @@ from cosmos import DbtTaskGroup, ExecutionConfig, ProfileConfig, ProjectConfig
 from cosmos.constants import TestIndirectSelection
 
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/opt/airflow/data"))
-DBT_PROJECT_DIR = Path(os.environ.get("DBT_PROJECT_DIR", "/opt/airflow/dbt/quake"))
+DBT_PROJECT_DIR = Path(os.environ.get("DBT_PROJECT_DIR", "/opt/airflow/dbt/quake_postgres"))
 DBT_EXECUTABLE = "/home/airflow/dbt-venv/bin/dbt"
 WAREHOUSE_CONN_ID = "warehouse"
 # One slot, created by airflow-init: dbt tasks from different DAG runs never overlap.
